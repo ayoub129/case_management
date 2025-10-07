@@ -54,6 +54,19 @@ class PurchaseController extends Controller
                 $query->where('order_date', '<=', $request->end_date);
             }
 
+            // Apply daily/monthly filters
+            if ($request->filled('date')) {
+                // Daily filter - show purchases for specific date
+                $query->whereDate('order_date', $request->date);
+            }
+
+            if ($request->filled('month')) {
+                // Monthly filter - show purchases for specific month
+                $monthStart = \Carbon\Carbon::parse($request->month . '-01')->startOfMonth();
+                $monthEnd = \Carbon\Carbon::parse($request->month . '-01')->endOfMonth();
+                $query->whereBetween('order_date', [$monthStart, $monthEnd]);
+            }
+
             // Apply sorting
             $sortBy = $request->get('sort_by', 'order_date');
             $sortOrder = $request->get('sort_order', 'desc');
@@ -61,9 +74,56 @@ class PurchaseController extends Controller
 
             $purchases = $query->paginate($request->get('per_page', 15));
 
+            // Calculate totals for the filtered data (not just current page)
+            // IMPORTANT: Don't apply search filter to totals - we want totals for ALL data in the period
+            $totalQuery = Purchase::query();
+            
+            // Apply only date/period filters for totals calculation (NOT search filters)
+            // If no date filters are provided, get ALL purchases data
+            if ($request->filled('supplier_id')) {
+                $totalQuery->where('supplier_id', $request->supplier_id);
+            }
+
+            if ($request->filled('status')) {
+                $totalQuery->where('status', $request->status);
+            }
+
+            if ($request->filled('start_date')) {
+                $totalQuery->where('order_date', '>=', $request->start_date);
+            }
+
+            if ($request->filled('end_date')) {
+                $totalQuery->where('order_date', '<=', $request->end_date);
+            }
+
+            if ($request->filled('date')) {
+                $totalQuery->whereDate('order_date', $request->date);
+            }
+
+            if ($request->filled('month')) {
+                $monthStart = \Carbon\Carbon::parse($request->month . '-01')->startOfMonth();
+                $monthEnd = \Carbon\Carbon::parse($request->month . '-01')->endOfMonth();
+                $totalQuery->whereBetween('order_date', [$monthStart, $monthEnd]);
+            }
+            
+            // If no date filters are provided, we want ALL purchases (for "All" view mode)
+            // No additional filters needed - query will return all purchases
+
+            // Calculate totals
+            $totalPurchases = $totalQuery->sum('final_cost') ?? 0;
+            $totalCount = $totalQuery->count() ?? 0;
+            
+            // Ensure we have valid numbers
+            $totalPurchases = is_numeric($totalPurchases) ? (float) $totalPurchases : 0;
+            $totalCount = is_numeric($totalCount) ? (int) $totalCount : 0;
+
             return response()->json([
                 'success' => true,
-                'data' => $purchases
+                'data' => $purchases,
+                'totals' => [
+                    'total_amount' => $totalPurchases,
+                    'total_count' => $totalCount
+                ]
             ]);
 
         } catch (\Exception $e) {

@@ -86,7 +86,7 @@ export function CashManagement() {
   const [isScanning, setIsScanning] = useState(false)
   const [scanTimeout, setScanTimeout] = useState<NodeJS.Timeout | null>(null)
   const [scannedProduct, setScannedProduct] = useState<Product | null>(null)
-  const [viewMode, setViewMode] = useState<'daily' | 'monthly'>('daily')
+  const [viewMode, setViewMode] = useState<'daily' | 'monthly' | 'all'>('daily')
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0])
   const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7))
   const [formData, setFormData] = useState({
@@ -173,7 +173,9 @@ export function CashManagement() {
       // Prepare date filters based on view mode
       const dateFilter = viewMode === 'daily' 
         ? { date: selectedDate }
-        : { month: selectedMonth }
+        : viewMode === 'monthly'
+        ? { month: selectedMonth }
+        : {} // No date filter for 'all' mode
       
       const [transactionsResponse, balanceResponse] = await Promise.all([
         cashTransactionsAPI.getAll({ 
@@ -478,11 +480,15 @@ export function CashManagement() {
   const getStatsTitle = (type: 'income' | 'expenses' | 'balance') => {
     const baseTitle = type === 'income' ? 'Revenus totaux' : 
                      type === 'expenses' ? 'Dépenses totales' : 'Solde'
-    return viewMode === 'daily' ? `${baseTitle} du jour` : `${baseTitle} du mois`
+    if (viewMode === 'daily') return `${baseTitle} du jour`
+    if (viewMode === 'monthly') return `${baseTitle} du mois`
+    return `${baseTitle} total`
   }
 
   const getComparisonText = () => {
-    return viewMode === 'daily' ? 'depuis hier' : 'depuis le mois dernier'
+    if (viewMode === 'daily') return 'depuis hier'
+    if (viewMode === 'monthly') return 'depuis le mois dernier'
+    return 'toutes périodes'
   }
 
   const stats = [
@@ -549,13 +555,14 @@ export function CashManagement() {
           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
             <div className="flex items-center space-x-3">
               <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Vue:</span>
-              <Select value={viewMode} onValueChange={(value: 'daily' | 'monthly') => setViewMode(value)}>
+              <Select value={viewMode} onValueChange={(value: 'daily' | 'monthly' | 'all') => setViewMode(value)}>
                 <SelectTrigger className="w-36 bg-white dark:bg-gray-700">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="daily">📅 Quotidien</SelectItem>
                   <SelectItem value="monthly">📊 Mensuel</SelectItem>
+                  <SelectItem value="all">📋 Tout</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -570,7 +577,7 @@ export function CashManagement() {
                   className="w-44 bg-white dark:bg-gray-700"
                 />
               </div>
-            ) : (
+            ) : viewMode === 'monthly' ? (
               <div className="flex items-center space-x-3">
                 <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Mois:</span>
                 <Input
@@ -580,7 +587,7 @@ export function CashManagement() {
                   className="w-44 bg-white dark:bg-gray-700"
                 />
               </div>
-            )}
+            ) : null}
           </div>
         </div>
       </div>

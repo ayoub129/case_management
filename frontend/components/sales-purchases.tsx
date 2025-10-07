@@ -12,7 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { Search, Filter, Calendar, Plus, Download, Loader2, Printer, Trash2, FileText, Table, ShoppingCart, Truck, TrendingUp, BarChart3 } from "lucide-react"
+import { Search, Filter, Calendar, Plus, Download, Loader2, Printer, Trash2, FileText, Table, ShoppingCart, Truck, TrendingUp } from "lucide-react"
 import { salesAPI, purchasesAPI, productsAPI, suppliersAPI, customersAPI } from "@/lib/api"
 import { exportToPDF, exportToExcel, ExportData } from "@/lib/export-utils"
 import { BulkSales } from "@/components/bulk-sales"
@@ -103,12 +103,18 @@ export function SalesAndPurchases() {
   const [products, setProducts] = useState<Product[]>([])
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [customers, setCustomers] = useState<Customer[]>([])
+  
+  // Store actual totals from API data (not filtered by search)
+  const [actualSalesTotal, setActualSalesTotal] = useState(0)
+  const [actualPurchasesTotal, setActualPurchasesTotal] = useState(0)
+  const [actualSalesCount, setActualSalesCount] = useState(0)
+  const [actualPurchasesCount, setActualPurchasesCount] = useState(0)
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState("")
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("")
   const [isSaleDialogOpen, setIsSaleDialogOpen] = useState(false)
   const [isPurchaseDialogOpen, setIsPurchaseDialogOpen] = useState(false)
-  const [viewMode, setViewMode] = useState<'daily' | 'monthly'>('daily')
+  const [viewMode, setViewMode] = useState<'daily' | 'monthly' | 'all'>('daily')
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0])
   const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7))
   
@@ -160,6 +166,12 @@ export function SalesAndPurchases() {
     fetchData()
   }, [salesPage, purchasesPage, salesPerPage, purchasesPerPage, debouncedSearchTerm, viewMode, selectedDate, selectedMonth])
 
+  // Clear search when view mode changes to ensure totals are calculated correctly
+  useEffect(() => {
+    setSearchTerm("")
+    setDebouncedSearchTerm("")
+  }, [viewMode, selectedDate, selectedMonth])
+
 
   const fetchData = async () => {
     try {
@@ -168,7 +180,9 @@ export function SalesAndPurchases() {
       // Prepare date filters based on view mode
       const dateFilter = viewMode === 'daily' 
         ? { date: selectedDate }
-        : { month: selectedMonth }
+        : viewMode === 'monthly'
+        ? { month: selectedMonth }
+        : {} // No date filter for 'all' mode
       
       const [salesResponse, purchasesResponse, productsResponse, suppliersResponse, customersResponse] = await Promise.all([
         salesAPI.getAll({ 
@@ -339,6 +353,29 @@ export function SalesAndPurchases() {
         console.error('Customers data is not an array:', customersData)
         setCustomers([])
       }
+      
+      // Use totals from backend API response
+      const salesTotals = salesResponse.data.totals || { total_amount: 0, total_count: 0 }
+      const purchasesTotals = purchasesResponse.data.totals || { total_amount: 0, total_count: 0 }
+      
+      console.log('Sales API Response:', salesResponse.data)
+      console.log('Purchases API Response:', purchasesResponse.data)
+      console.log('Sales totals from backend:', salesTotals)
+      console.log('Purchases totals from backend:', purchasesTotals)
+      console.log('Date filter sent to backend:', dateFilter)
+      
+      // Ensure we have valid numbers
+      const salesTotal = parseFloat(salesTotals.total_amount) || 0
+      const purchasesTotal = parseFloat(purchasesTotals.total_amount) || 0
+      const salesCount = parseInt(salesTotals.total_count) || 0
+      const purchasesCount = parseInt(purchasesTotals.total_count) || 0
+      
+      console.log('Parsed totals:', { salesTotal, purchasesTotal, salesCount, purchasesCount })
+      
+      setActualSalesTotal(salesTotal)
+      setActualPurchasesTotal(purchasesTotal)
+      setActualSalesCount(salesCount)
+      setActualPurchasesCount(purchasesCount)
     } catch (error: any) {
       console.error('Error fetching data:', error)
       toast.error('Erreur lors du chargement des données')
@@ -1054,13 +1091,14 @@ export function SalesAndPurchases() {
         <div className="flex items-center space-x-4">
           <div className="flex items-center space-x-2">
             <span className="text-sm text-gray-600">Vue:</span>
-            <Select value={viewMode} onValueChange={(value: 'daily' | 'monthly') => setViewMode(value)}>
+            <Select value={viewMode} onValueChange={(value: 'daily' | 'monthly' | 'all') => setViewMode(value)}>
               <SelectTrigger className="w-32">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="daily">Quotidien</SelectItem>
                 <SelectItem value="monthly">Mensuel</SelectItem>
+                <SelectItem value="all">Tout</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -1074,7 +1112,7 @@ export function SalesAndPurchases() {
                 className="w-40"
               />
             </div>
-          ) : (
+          ) : viewMode === 'monthly' ? (
             <div className="flex items-center space-x-2">
               <span className="text-sm text-gray-600">Mois:</span>
               <Input
@@ -1084,7 +1122,7 @@ export function SalesAndPurchases() {
                 className="w-40"
               />
             </div>
-          )}
+          ) : null}
         </div>
         <div className="flex space-x-2 rtl:space-x-reverse">
           <DropdownMenu>
@@ -1118,18 +1156,18 @@ export function SalesAndPurchases() {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
-              {viewMode === 'daily' ? 'Ventes du jour' : 'Ventes du mois'}
+              {viewMode === 'daily' ? 'Ventes du jour' : viewMode === 'monthly' ? 'Ventes du mois' : 'Ventes totales'}
             </CardTitle>
             <ShoppingCart className="h-4 w-4 text-green-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{salesCount}</div>
+            <div className="text-2xl font-bold">{actualSalesCount}</div>
             <p className="text-xs text-muted-foreground">
-              Total: {formatCurrency(salesTotal)}
+              Total: {formatCurrency(actualSalesTotal)}
             </p>
           </CardContent>
         </Card>
@@ -1137,14 +1175,14 @@ export function SalesAndPurchases() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
-              {viewMode === 'daily' ? 'Achats du jour' : 'Achats du mois'}
+              {viewMode === 'daily' ? 'Achats du jour' : viewMode === 'monthly' ? 'Achats du mois' : 'Achats totaux'}
             </CardTitle>
             <Truck className="h-4 w-4 text-red-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{purchasesCount}</div>
+            <div className="text-2xl font-bold">{actualPurchasesCount}</div>
             <p className="text-xs text-muted-foreground">
-              Total: {formatCurrency(purchasesTotal)}
+              Total: {formatCurrency(actualPurchasesTotal)}
             </p>
           </CardContent>
         </Card>
@@ -1152,33 +1190,20 @@ export function SalesAndPurchases() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
-              {viewMode === 'daily' ? 'Profit du jour' : 'Profit du mois'}
+              {viewMode === 'daily' ? 'Profit du jour' : viewMode === 'monthly' ? 'Profit du mois' : 'Profit total'}
             </CardTitle>
             <TrendingUp className="h-4 w-4 text-blue-600" />
           </CardHeader>
           <CardContent>
-            <div className={`text-2xl font-bold ${salesTotal - purchasesTotal >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-              {formatCurrency(salesTotal - purchasesTotal)}
+            <div className={`text-2xl font-bold ${(actualSalesTotal - actualPurchasesTotal) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+              {(() => {
+                const profit = actualSalesTotal - actualPurchasesTotal
+                console.log('Profit calculation:', { actualSalesTotal, actualPurchasesTotal, profit })
+                return formatCurrency(profit)
+              })()}
             </div>
             <p className="text-xs text-muted-foreground">
               Revenus - Dépenses
-            </p>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              {viewMode === 'daily' ? 'Marge du jour' : 'Marge du mois'}
-            </CardTitle>
-            <BarChart3 className="h-4 w-4 text-purple-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {salesTotal > 0 ? `${(((salesTotal - purchasesTotal) / salesTotal) * 100).toFixed(1)}%` : '0%'}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Marge bénéficiaire
             </p>
           </CardContent>
         </Card>

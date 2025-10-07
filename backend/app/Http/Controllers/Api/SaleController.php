@@ -72,6 +72,19 @@ class SaleController extends Controller
                 $query->where('sale_date', '<=', $request->end_date);
             }
 
+            // Apply daily/monthly filters
+            if ($request->filled('date')) {
+                // Daily filter - show sales for specific date
+                $query->whereDate('sale_date', $request->date);
+            }
+
+            if ($request->filled('month')) {
+                // Monthly filter - show sales for specific month
+                $monthStart = \Carbon\Carbon::parse($request->month . '-01')->startOfMonth();
+                $monthEnd = \Carbon\Carbon::parse($request->month . '-01')->endOfMonth();
+                $query->whereBetween('sale_date', [$monthStart, $monthEnd]);
+            }
+
             // Apply sorting
             $sortBy = $request->get('sort_by', 'sale_date');
             $sortOrder = $request->get('sort_order', 'desc');
@@ -79,9 +92,66 @@ class SaleController extends Controller
 
             $sales = $query->paginate($request->get('per_page', 15));
 
+            // Calculate totals for the filtered data (not just current page)
+            // IMPORTANT: Don't apply search filter to totals - we want totals for ALL data in the period
+            $totalQuery = Sale::query();
+            
+            // Apply only date/period filters for totals calculation (NOT search filters)
+            // If no date filters are provided, get ALL sales data
+            if ($request->filled('status')) {
+                $totalQuery->where('status', $request->status);
+            }
+
+            if ($request->filled('start_date')) {
+                $totalQuery->where('sale_date', '>=', $request->start_date);
+            }
+
+            if ($request->filled('end_date')) {
+                $totalQuery->where('sale_date', '<=', $request->end_date);
+            }
+
+            if ($request->filled('date')) {
+                $totalQuery->whereDate('sale_date', $request->date);
+            }
+
+            if ($request->filled('month')) {
+                $monthStart = \Carbon\Carbon::parse($request->month . '-01')->startOfMonth();
+                $monthEnd = \Carbon\Carbon::parse($request->month . '-01')->endOfMonth();
+                $totalQuery->whereBetween('sale_date', [$monthStart, $monthEnd]);
+            }
+            
+            // If no date filters are provided, we want ALL sales (for "All" view mode)
+            // No additional filters needed - query will return all sales
+
+            // Calculate totals
+            $totalSales = $totalQuery->sum('final_amount') ?? 0;
+            $totalCount = $totalQuery->count() ?? 0;
+            
+            // Debug logging
+            \Log::info('Sales totals calculation:', [
+                'filters' => [
+                    'date' => $request->get('date'),
+                    'month' => $request->get('month'),
+                    'search' => $request->get('search'),
+                    'status' => $request->get('status')
+                ],
+                'total_sales' => $totalSales,
+                'total_count' => $totalCount,
+                'sql' => $totalQuery->toSql(),
+                'bindings' => $totalQuery->getBindings()
+            ]);
+            
+            // Ensure we have valid numbers
+            $totalSales = is_numeric($totalSales) ? (float) $totalSales : 0;
+            $totalCount = is_numeric($totalCount) ? (int) $totalCount : 0;
+
         return response()->json([
             'success' => true,
-                'data' => $sales
+            'data' => $sales,
+            'totals' => [
+                'total_amount' => $totalSales,
+                'total_count' => $totalCount
+            ]
             ]);
 
         } catch (\Exception $e) {

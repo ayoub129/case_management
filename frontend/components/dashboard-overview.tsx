@@ -99,7 +99,7 @@ export function DashboardOverview() {
   const [recentActivities, setRecentActivities] = useState<RecentActivity[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
-  const [profitView, setProfitView] = useState<'daily' | 'monthly'>('daily')
+  const [profitView, setProfitView] = useState<'daily' | 'monthly' | 'all'>('daily')
 
   useEffect(() => {
     fetchDashboardData()
@@ -222,12 +222,19 @@ export function DashboardOverview() {
         title: "Profit du jour",
         period: "depuis hier"
       }
-    } else {
+    } else if (profitView === 'monthly') {
       return {
         current: profitStats.thisMonth.profit,
         previous: profitStats.lastMonth.profit,
         title: "Profit du mois",
         period: "depuis le mois dernier"
+      }
+    } else {
+      return {
+        current: profitStats.thisMonth.profit + profitStats.today.profit, // Total profit
+        previous: 0,
+        title: "Profit total",
+        period: "toutes périodes"
       }
     }
   }
@@ -240,12 +247,19 @@ export function DashboardOverview() {
         title: "Ventes aujourd'hui",
         period: "depuis hier"
       }
-    } else {
+    } else if (profitView === 'monthly') {
       return {
         current: dailyStats.salesThisMonth,
         previous: dailyStats.salesLastMonth,
         title: "Ventes du mois",
         period: "depuis le mois dernier"
+      }
+    } else {
+      return {
+        current: dailyStats.salesThisMonth + dailyStats.salesToday, // Total sales
+        previous: 0,
+        title: "Ventes totales",
+        period: "toutes périodes"
       }
     }
   }
@@ -313,13 +327,14 @@ export function DashboardOverview() {
         <div className="flex items-center space-x-4">
           <div className="flex items-center space-x-2">
             <span className="text-sm text-gray-600">Vue profit:</span>
-            <Select value={profitView} onValueChange={(value: 'daily' | 'monthly') => setProfitView(value)}>
+            <Select value={profitView} onValueChange={(value: 'daily' | 'monthly' | 'all') => setProfitView(value)}>
               <SelectTrigger className="w-32">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="daily">Quotidien</SelectItem>
                 <SelectItem value="monthly">Mensuel</SelectItem>
+                <SelectItem value="all">Tout</SelectItem>
               </SelectContent>
             </Select>
           </div>
