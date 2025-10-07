@@ -20,6 +20,14 @@ class DashboardController extends Controller
         try {
             $today = Carbon::today();
             $yesterday = Carbon::yesterday();
+            
+            // Get current month start and end
+            $currentMonthStart = Carbon::now()->startOfMonth();
+            $currentMonthEnd = Carbon::now()->endOfMonth();
+            
+            // Get last month start and end
+            $lastMonthStart = Carbon::now()->subMonth()->startOfMonth();
+            $lastMonthEnd = Carbon::now()->subMonth()->endOfMonth();
 
             // Get today's cash income
             $cashToday = CashTransaction::where('type', 'income')
@@ -36,6 +44,12 @@ class DashboardController extends Controller
 
             // Get yesterday's sales count
             $salesYesterday = Sale::whereDate('sale_date', $yesterday)->count();
+            
+            // Get current month sales count
+            $salesThisMonth = Sale::whereBetween('sale_date', [$currentMonthStart, $currentMonthEnd])->count();
+            
+            // Get last month sales count
+            $salesLastMonth = Sale::whereBetween('sale_date', [$lastMonthStart, $lastMonthEnd])->count();
 
             // Get total products count
             $totalProducts = Product::count();
@@ -55,6 +69,8 @@ class DashboardController extends Controller
                     'cashYesterday' => (float) $cashYesterday,
                     'salesToday' => $salesToday,
                     'salesYesterday' => $salesYesterday,
+                    'salesThisMonth' => $salesThisMonth,
+                    'salesLastMonth' => $salesLastMonth,
                     'totalProducts' => $totalProducts,
                     'totalProductsYesterday' => $totalProducts, // Products count rarely changes daily
                     'stockAlertsToday' => $stockAlertsToday,
@@ -76,7 +92,37 @@ class DashboardController extends Controller
     public function getStats(): JsonResponse
     {
         try {
-            // Calculate cash statistics
+            // Get current month start and end
+            $currentMonthStart = Carbon::now()->startOfMonth();
+            $currentMonthEnd = Carbon::now()->endOfMonth();
+            
+            // Get last month start and end
+            $lastMonthStart = Carbon::now()->subMonth()->startOfMonth();
+            $lastMonthEnd = Carbon::now()->subMonth()->endOfMonth();
+            
+            // Calculate current month cash statistics (for profit calculation)
+            $currentMonthIncome = CashTransaction::where('type', 'income')
+                ->whereBetween('transaction_date', [$currentMonthStart, $currentMonthEnd])
+                ->sum('amount');
+                
+            $currentMonthExpenses = CashTransaction::where('type', 'expense')
+                ->whereBetween('transaction_date', [$currentMonthStart, $currentMonthEnd])
+                ->sum('amount');
+                
+            $currentMonthProfit = $currentMonthIncome - $currentMonthExpenses;
+            
+            // Calculate last month cash statistics (for comparison)
+            $lastMonthIncome = CashTransaction::where('type', 'income')
+                ->whereBetween('transaction_date', [$lastMonthStart, $lastMonthEnd])
+                ->sum('amount');
+                
+            $lastMonthExpenses = CashTransaction::where('type', 'expense')
+                ->whereBetween('transaction_date', [$lastMonthStart, $lastMonthEnd])
+                ->sum('amount');
+                
+            $lastMonthProfit = $lastMonthIncome - $lastMonthExpenses;
+            
+            // Calculate all-time statistics
             $totalIncome = CashTransaction::where('type', 'income')->sum('amount');
             $totalExpenses = CashTransaction::where('type', 'expense')->sum('amount');
             $currentBalance = $totalIncome - $totalExpenses;
@@ -88,6 +134,12 @@ class DashboardController extends Controller
                 'total_income' => $totalIncome,
                 'total_expenses' => $totalExpenses,
                 'current_balance' => $currentBalance,
+                'current_month_income' => $currentMonthIncome,
+                'current_month_expenses' => $currentMonthExpenses,
+                'current_month_profit' => $currentMonthProfit,
+                'last_month_income' => $lastMonthIncome,
+                'last_month_expenses' => $lastMonthExpenses,
+                'last_month_profit' => $lastMonthProfit,
                 'low_stock_products' => Product::where('stock_quantity', '<=', \DB::raw('minimum_stock'))
                     ->where('stock_quantity', '>', 0)->count(),
                 'out_of_stock_products' => Product::where('stock_quantity', '=', 0)->count(),

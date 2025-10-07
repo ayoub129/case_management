@@ -44,6 +44,8 @@ interface DailyStats {
   totalProductsYesterday: number
   stockAlertsToday: number
   stockAlertsYesterday: number
+  salesThisMonth: number
+  salesLastMonth: number
 }
 
 interface ProfitStats {
@@ -89,7 +91,9 @@ export function DashboardOverview() {
     totalProducts: 0,
     totalProductsYesterday: 0,
     stockAlertsToday: 0,
-    stockAlertsYesterday: 0
+    stockAlertsYesterday: 0,
+    salesThisMonth: 0,
+    salesLastMonth: 0
   })
   const [profitStats, setProfitStats] = useState<ProfitStats | null>(null)
   const [recentActivities, setRecentActivities] = useState<RecentActivity[]>([])
@@ -127,12 +131,15 @@ export function DashboardOverview() {
         totalProducts: dailyData.totalProducts || 0,
         totalProductsYesterday: dailyData.totalProductsYesterday || 0,
         stockAlertsToday: dailyData.stockAlertsToday || 0,
-        stockAlertsYesterday: dailyData.stockAlertsYesterday || 0
+        stockAlertsYesterday: dailyData.stockAlertsYesterday || 0,
+        salesThisMonth: dailyData.salesThisMonth || 0,
+        salesLastMonth: dailyData.salesLastMonth || 0
       })
 
       // Calculate profit stats from the dashboard stats
       if (statsResponse.data.data) {
         const statsData = statsResponse.data.data
+        
         setProfitStats({
           today: {
             revenue: dailyData.cashToday || 0,
@@ -145,14 +152,16 @@ export function DashboardOverview() {
             profit: dailyData.cashYesterday || 0
           },
           thisMonth: {
-            revenue: statsData.total_revenue || 0,
-            expenses: statsData.total_expenses || 0,
-            profit: (statsData.total_revenue || 0) - (statsData.total_expenses || 0)
+            // Use actual current month data from cash transactions
+            revenue: statsData.current_month_income || 0,
+            expenses: statsData.current_month_expenses || 0,
+            profit: statsData.current_month_profit || 0
           },
           lastMonth: {
-            revenue: 0, // We'll need to fetch last month data separately
-            expenses: 0,
-            profit: 0
+            // Use actual last month data from cash transactions
+            revenue: statsData.last_month_income || 0,
+            expenses: statsData.last_month_expenses || 0,
+            profit: statsData.last_month_profit || 0
           }
         })
       }
@@ -223,7 +232,26 @@ export function DashboardOverview() {
     }
   }
 
+  const getCurrentSalesData = () => {
+    if (profitView === 'daily') {
+      return {
+        current: dailyStats.salesToday,
+        previous: dailyStats.salesYesterday,
+        title: "Ventes aujourd'hui",
+        period: "depuis hier"
+      }
+    } else {
+      return {
+        current: dailyStats.salesThisMonth,
+        previous: dailyStats.salesLastMonth,
+        title: "Ventes du mois",
+        period: "depuis le mois dernier"
+      }
+    }
+  }
+
   const profitData = getCurrentProfitData()
+  const salesData = getCurrentSalesData()
 
   const dashboardStats = [
     {
@@ -234,9 +262,9 @@ export function DashboardOverview() {
       color: profitData.current >= 0 ? "text-green-600" : "text-red-600",
     },
     {
-      title: "Ventes aujourd'hui",
-      value: dailyStats.salesToday.toString(),
-      change: calculatePercentageChange(dailyStats.salesToday, dailyStats.salesYesterday),
+      title: salesData.title,
+      value: salesData.current.toString(),
+      change: calculatePercentageChange(salesData.current, salesData.previous),
       icon: ShoppingCart,
       color: "text-blue-600",
     },
@@ -283,6 +311,18 @@ export function DashboardOverview() {
           <p className="text-gray-600 dark:text-gray-400">Vue d'ensemble de votre système de gestion</p>
         </div>
         <div className="flex items-center space-x-4">
+          <div className="flex items-center space-x-2">
+            <span className="text-sm text-gray-600">Vue profit:</span>
+            <Select value={profitView} onValueChange={(value: 'daily' | 'monthly') => setProfitView(value)}>
+              <SelectTrigger className="w-32">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="daily">Quotidien</SelectItem>
+                <SelectItem value="monthly">Mensuel</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
           <ClientOnly>
             <div className="text-sm text-gray-500">
               Dernière mise à jour: {new Date().toLocaleString("fr-FR")}
@@ -317,7 +357,7 @@ export function DashboardOverview() {
                 <CardContent>
                   <div className="text-2xl font-bold">{stat.value}</div>
                   <p className="text-xs text-muted-foreground">
-                    <span className={stat.color}>{stat.change}</span> depuis hier
+                    <span className={stat.color}>{stat.change}</span> {index === 0 ? profitData.period : index === 1 ? salesData.period : "depuis hier"}
                   </p>
                 </CardContent>
               </Card>

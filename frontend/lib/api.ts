@@ -387,7 +387,7 @@ export const cashTransactionsAPI = {
   
   update: (id: number, data: any) => api.put(`/cash-transactions/${id}`, data),
   delete: (id: number) => api.delete(`/cash-transactions/${id}`),
-  getBalance: () => api.get('/cash-transactions/balance'),
+  getBalance: (params?: any) => api.get('/cash-transactions/balance', { params }),
   getReports: (params?: any) => api.get('/cash-transactions/reports', { params }),
   export: (params?: any) => api.get('/cash-transactions/export', { 
     params, 

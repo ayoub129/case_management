@@ -86,6 +86,9 @@ export function CashManagement() {
   const [isScanning, setIsScanning] = useState(false)
   const [scanTimeout, setScanTimeout] = useState<NodeJS.Timeout | null>(null)
   const [scannedProduct, setScannedProduct] = useState<Product | null>(null)
+  const [viewMode, setViewMode] = useState<'daily' | 'monthly'>('daily')
+  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0])
+  const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7))
   const [formData, setFormData] = useState({
     amount: '',
     description: '',
@@ -107,7 +110,7 @@ export function CashManagement() {
 
   useEffect(() => {
     fetchCashData()
-  }, [currentPage, perPage, debouncedSearchTerm])
+  }, [currentPage, perPage, debouncedSearchTerm, viewMode, selectedDate, selectedMonth])
 
   // Barcode scanning effect for main page
   useEffect(() => {
@@ -166,13 +169,23 @@ export function CashManagement() {
   const fetchCashData = async () => {
     try {
       setLoading(true)
+      
+      // Prepare date filters based on view mode
+      const dateFilter = viewMode === 'daily' 
+        ? { date: selectedDate }
+        : { month: selectedMonth }
+      
       const [transactionsResponse, balanceResponse] = await Promise.all([
         cashTransactionsAPI.getAll({ 
           page: currentPage, 
           per_page: perPage,
-          search: debouncedSearchTerm || undefined 
+          search: debouncedSearchTerm || undefined,
+          ...dateFilter
         }),
-        cashTransactionsAPI.getBalance()
+        cashTransactionsAPI.getBalance({
+          view_mode: viewMode,
+          ...dateFilter
+        })
       ])
 
       console.log('Cash Transactions API Response:', transactionsResponse.data)
@@ -462,30 +475,40 @@ export function CashManagement() {
     return new Date(dateString).toLocaleDateString('fr-FR')
   }
 
+  const getStatsTitle = (type: 'income' | 'expenses' | 'balance') => {
+    const baseTitle = type === 'income' ? 'Revenus totaux' : 
+                     type === 'expenses' ? 'Dépenses totales' : 'Solde'
+    return viewMode === 'daily' ? `${baseTitle} du jour` : `${baseTitle} du mois`
+  }
+
+  const getComparisonText = () => {
+    return viewMode === 'daily' ? 'depuis hier' : 'depuis le mois dernier'
+  }
+
   const stats = [
     {
-      title: t("cash.income"),
+      title: getStatsTitle('income'),
       value: formatCurrency(balance?.total_income),
       change: balance?.changes?.income_percentage !== undefined ? 
-        `${balance.changes.income_percentage > 0 ? '+' : ''}${balance.changes.income_percentage}% depuis le mois dernier` : 
+        `${balance.changes.income_percentage > 0 ? '+' : ''}${balance.changes.income_percentage}% ${getComparisonText()}` : 
         "Aucune donnée précédente",
       icon: TrendingUp,
       color: "text-green-600",
     },
     {
-      title: t("cash.expenses"),
+      title: getStatsTitle('expenses'),
       value: formatCurrency(balance?.total_expenses),
       change: balance?.changes?.expenses_percentage !== undefined ? 
-        `${balance.changes.expenses_percentage > 0 ? '+' : ''}${balance.changes.expenses_percentage}% depuis le mois dernier` : 
+        `${balance.changes.expenses_percentage > 0 ? '+' : ''}${balance.changes.expenses_percentage}% ${getComparisonText()}` : 
         "Aucune donnée précédente",
       icon: TrendingDown,
       color: "text-red-600",
     },
     {
-      title: t("cash.balance"),
+      title: getStatsTitle('balance'),
       value: formatCurrency(balance?.current_balance),
       change: balance?.changes?.balance_percentage !== undefined ? 
-        `${balance.changes.balance_percentage > 0 ? '+' : ''}${balance.changes.balance_percentage}% depuis le mois dernier` : 
+        `${balance.changes.balance_percentage > 0 ? '+' : ''}${balance.changes.balance_percentage}% ${getComparisonText()}` : 
         "Aucune donnée précédente",
       icon: DollarSign,
       color: "text-blue-600",
@@ -514,9 +537,57 @@ export function CashManagement() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{t("cash.title")}</h1>
-        <div className="flex space-x-2 rtl:space-x-reverse">
+      {/* Header Section */}
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">{t("cash.title")}</h1>
+            <p className="text-gray-600 dark:text-gray-400 mt-1">Gestion des transactions de caisse et suivi des finances</p>
+          </div>
+          
+          {/* View Controls */}
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+            <div className="flex items-center space-x-3">
+              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Vue:</span>
+              <Select value={viewMode} onValueChange={(value: 'daily' | 'monthly') => setViewMode(value)}>
+                <SelectTrigger className="w-36 bg-white dark:bg-gray-700">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="daily">📅 Quotidien</SelectItem>
+                  <SelectItem value="monthly">📊 Mensuel</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            
+            {viewMode === 'daily' ? (
+              <div className="flex items-center space-x-3">
+                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Date:</span>
+                <Input
+                  type="date"
+                  value={selectedDate}
+                  onChange={(e) => setSelectedDate(e.target.value)}
+                  className="w-44 bg-white dark:bg-gray-700"
+                />
+              </div>
+            ) : (
+              <div className="flex items-center space-x-3">
+                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Mois:</span>
+                <Input
+                  type="month"
+                  value={selectedMonth}
+                  onChange={(e) => setSelectedMonth(e.target.value)}
+                  className="w-44 bg-white dark:bg-gray-700"
+                />
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Action Buttons */}
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="flex flex-wrap items-center gap-3">
           <Button variant="outline" onClick={async () => {
             try {
               await exportToPDF()
@@ -641,47 +712,63 @@ export function CashManagement() {
         </div>
       </div>
 
+      {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {stats.map((stat, index) => {
           const Icon = stat.icon
           return (
-            <Card key={index}>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">{stat.title}</CardTitle>
-                <Icon className={`h-4 w-4 ${stat.color}`} />
+            <Card key={index} className="hover:shadow-lg transition-all duration-200 border-0 shadow-md">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
+                <CardTitle className="text-sm font-semibold text-gray-600 dark:text-gray-400">{stat.title}</CardTitle>
+                <div className={`p-2 rounded-lg ${index === 0 ? 'bg-green-100 dark:bg-green-900/20' : index === 1 ? 'bg-red-100 dark:bg-red-900/20' : 'bg-blue-100 dark:bg-blue-900/20'}`}>
+                  <Icon className={`h-5 w-5 ${stat.color}`} />
+                </div>
               </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{stat.value}</div>
-                <p className="text-xs text-muted-foreground">
-                  <span className={stat.color}>{stat.change}</span>
-                </p>
+              <CardContent className="pt-0">
+                <div className="text-3xl font-bold text-gray-900 dark:text-white mb-2">{stat.value}</div>
+                <div className="flex items-center space-x-2">
+                  <div className={`text-sm font-medium ${stat.color}`}>
+                    {stat.change}
+                  </div>
+                </div>
               </CardContent>
             </Card>
           )
         })}
       </div>
 
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle>Transactions récentes</CardTitle>
-            <div className="flex items-center space-x-2">
+      {/* Transactions Table */}
+      <Card className="shadow-lg border-0">
+        <CardHeader className="bg-gray-50 dark:bg-gray-800/50 border-b border-gray-200 dark:border-gray-700">
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+            <div>
+              <CardTitle className="text-xl font-semibold text-gray-900 dark:text-white">
+                {viewMode === 'daily' ? 'Transactions du jour' : 'Transactions du mois'}
+              </CardTitle>
+              <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                {viewMode === 'daily' 
+                  ? `Transactions pour le ${new Date(selectedDate).toLocaleDateString('fr-FR')}`
+                  : `Transactions pour ${new Date(selectedMonth + '-01').toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })}`
+                }
+              </p>
+            </div>
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
                 <Input
                   placeholder="Rechercher..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10 w-64"
+                  className="pl-10 w-64 bg-white dark:bg-gray-700"
                 />
               </div>
               <div className="flex items-center space-x-2">
-                <span className="text-sm text-gray-600">Par page:</span>
+                <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Par page:</span>
                 <Select value={perPage.toString()} onValueChange={(value) => {
                   setPerPage(parseInt(value))
                   setCurrentPage(1)
                 }}>
-                  <SelectTrigger className="w-20">
+                  <SelectTrigger className="w-20 bg-white dark:bg-gray-700">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -697,107 +784,153 @@ export function CashManagement() {
             </div>
           </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="p-0">
           {transactions.length > 0 ? (
             <>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Date</TableHead>
-                    <TableHead>Description</TableHead>
-                    <TableHead>Référence</TableHead>
-                    <TableHead>Méthode</TableHead>
-                    <TableHead className="text-right">Montant</TableHead>
-                    <TableHead className="text-center">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {transactions.map((transaction) => (
-                    <TableRow key={transaction.id}>
-                      <TableCell>{formatDate(transaction.transaction_date)}</TableCell>
-                      <TableCell className="font-medium">{transaction.description}</TableCell>
-                      <TableCell>{transaction.reference || '-'}</TableCell>
-                      <TableCell>{transaction.payment_method || '-'}</TableCell>
-                      <TableCell className={`text-right font-semibold ${
-                        transaction.type === 'income' ? 'text-green-600' : 'text-red-600'
-                      }`}>
-                        {transaction.type === 'income' ? '+' : '-'}{formatCurrency(transaction.amount)}
-                      </TableCell>
-                      <TableCell className="text-center">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleDelete(transaction.id)}
-                          className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </TableCell>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="border-b border-gray-200 dark:border-gray-700">
+                      <TableHead className="font-semibold text-gray-700 dark:text-gray-300">Date</TableHead>
+                      <TableHead className="font-semibold text-gray-700 dark:text-gray-300">Description</TableHead>
+                      <TableHead className="font-semibold text-gray-700 dark:text-gray-300">Référence</TableHead>
+                      <TableHead className="font-semibold text-gray-700 dark:text-gray-300">Méthode</TableHead>
+                      <TableHead className="text-right font-semibold text-gray-700 dark:text-gray-300">Montant</TableHead>
+                      <TableHead className="text-center font-semibold text-gray-700 dark:text-gray-300">Actions</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {transactions.map((transaction, index) => (
+                      <TableRow 
+                        key={transaction.id} 
+                        className={`border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors ${
+                          index % 2 === 0 ? 'bg-white dark:bg-gray-900' : 'bg-gray-50/50 dark:bg-gray-800/30'
+                        }`}
+                      >
+                        <TableCell className="font-medium text-gray-900 dark:text-gray-100">
+                          {formatDate(transaction.transaction_date)}
+                        </TableCell>
+                        <TableCell className="font-medium text-gray-900 dark:text-gray-100">
+                          {transaction.description}
+                        </TableCell>
+                        <TableCell className="text-gray-600 dark:text-gray-400">
+                          {transaction.reference || '-'}
+                        </TableCell>
+                        <TableCell className="text-gray-600 dark:text-gray-400">
+                          {transaction.payment_method || '-'}
+                        </TableCell>
+                        <TableCell className={`text-right font-bold text-lg ${
+                          transaction.type === 'income' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
+                        }`}>
+                          <div className="flex items-center justify-end space-x-1">
+                            <span className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold ${
+                              transaction.type === 'income' 
+                                ? 'bg-green-100 text-green-600 dark:bg-green-900/20 dark:text-green-400' 
+                                : 'bg-red-100 text-red-600 dark:bg-red-900/20 dark:text-red-400'
+                            }`}>
+                              {transaction.type === 'income' ? '+' : '-'}
+                            </span>
+                            {formatCurrency(transaction.amount)}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleDelete(transaction.id)}
+                            className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
 
               {/* Pagination */}
               {pagination && pagination.last_page > 1 && (
-                <div className="flex items-center justify-between mt-4">
-                  <div className="text-sm text-gray-700">
-                    Affichage de {pagination.from} à {pagination.to} sur {pagination.total} résultats
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handlePageChange(currentPage - 1)}
-                      disabled={currentPage === 1}
-                    >
-                      <ChevronLeft className="h-4 w-4" />
-                      Précédent
-                    </Button>
-                    
-                    <div className="flex items-center space-x-1">
-                      {Array.from({ length: Math.min(5, pagination.last_page) }, (_, i) => {
-                        let pageNum;
-                        if (pagination.last_page <= 5) {
-                          pageNum = i + 1;
-                        } else if (currentPage <= 3) {
-                          pageNum = i + 1;
-                        } else if (currentPage >= pagination.last_page - 2) {
-                          pageNum = pagination.last_page - 4 + i;
-                        } else {
-                          pageNum = currentPage - 2 + i;
-                        }
-                        
-                        return (
-                          <Button
-                            key={pageNum}
-                            variant={currentPage === pageNum ? "default" : "outline"}
-                            size="sm"
-                            onClick={() => handlePageChange(pageNum)}
-                            className="w-8 h-8 p-0"
-                          >
-                            {pageNum}
-                          </Button>
-                        );
-                      })}
+                <div className="bg-gray-50 dark:bg-gray-800/50 border-t border-gray-200 dark:border-gray-700 px-6 py-4">
+                  <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+                    <div className="text-sm text-gray-600 dark:text-gray-400">
+                      Affichage de <span className="font-semibold">{pagination.from}</span> à <span className="font-semibold">{pagination.to}</span> sur <span className="font-semibold">{pagination.total}</span> résultats
                     </div>
-                    
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handlePageChange(currentPage + 1)}
-                      disabled={currentPage === pagination.last_page}
-                    >
-                      Suivant
-                      <ChevronRight className="h-4 w-4" />
-                    </Button>
+                    <div className="flex items-center space-x-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handlePageChange(currentPage - 1)}
+                        disabled={currentPage === 1}
+                        className="bg-white dark:bg-gray-700"
+                      >
+                        <ChevronLeft className="h-4 w-4" />
+                        Précédent
+                      </Button>
+                      
+                      <div className="flex items-center space-x-1">
+                        {Array.from({ length: Math.min(5, pagination.last_page) }, (_, i) => {
+                          let pageNum;
+                          if (pagination.last_page <= 5) {
+                            pageNum = i + 1;
+                          } else if (currentPage <= 3) {
+                            pageNum = i + 1;
+                          } else if (currentPage >= pagination.last_page - 2) {
+                            pageNum = pagination.last_page - 4 + i;
+                          } else {
+                            pageNum = currentPage - 2 + i;
+                          }
+                          
+                          return (
+                            <Button
+                              key={pageNum}
+                              variant={currentPage === pageNum ? "default" : "outline"}
+                              size="sm"
+                              onClick={() => handlePageChange(pageNum)}
+                              className="w-8 h-8 p-0 bg-white dark:bg-gray-700"
+                            >
+                              {pageNum}
+                            </Button>
+                          );
+                        })}
+                      </div>
+                      
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handlePageChange(currentPage + 1)}
+                        disabled={currentPage === pagination.last_page}
+                        className="bg-white dark:bg-gray-700"
+                      >
+                        Suivant
+                        <ChevronRight className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </div>
                 </div>
               )}
             </>
           ) : (
-            <div className="text-center py-8 text-gray-500">
-              Aucune transaction trouvée
+            <div className="text-center py-16">
+              <div className="mx-auto w-24 h-24 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center mb-4">
+                <DollarSign className="h-12 w-12 text-gray-400" />
+              </div>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+                Aucune transaction trouvée
+              </h3>
+              <p className="text-gray-600 dark:text-gray-400 mb-6">
+                {viewMode === 'daily' 
+                  ? `Aucune transaction pour le ${new Date(selectedDate).toLocaleDateString('fr-FR')}`
+                  : `Aucune transaction pour ${new Date(selectedMonth + '-01').toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })}`
+                }
+              </p>
+              <Button 
+                onClick={() => setIsDialogOpen(true)}
+                className="bg-blue-600 hover:bg-blue-700 text-white"
+              >
+                <Plus className="h-4 w-4 mr-2" />
+                Ajouter une transaction
+              </Button>
             </div>
           )}
         </CardContent>

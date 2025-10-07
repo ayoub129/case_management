@@ -12,7 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { Search, Filter, Calendar, Plus, Download, Loader2, Printer, Trash2, FileText, Table } from "lucide-react"
+import { Search, Filter, Calendar, Plus, Download, Loader2, Printer, Trash2, FileText, Table, ShoppingCart, Truck, TrendingUp, BarChart3 } from "lucide-react"
 import { salesAPI, purchasesAPI, productsAPI, suppliersAPI, customersAPI } from "@/lib/api"
 import { exportToPDF, exportToExcel, ExportData } from "@/lib/export-utils"
 import { BulkSales } from "@/components/bulk-sales"
@@ -108,6 +108,9 @@ export function SalesAndPurchases() {
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("")
   const [isSaleDialogOpen, setIsSaleDialogOpen] = useState(false)
   const [isPurchaseDialogOpen, setIsPurchaseDialogOpen] = useState(false)
+  const [viewMode, setViewMode] = useState<'daily' | 'monthly'>('daily')
+  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0])
+  const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7))
   
   
   // Pagination state
@@ -155,22 +158,30 @@ export function SalesAndPurchases() {
 
   useEffect(() => {
     fetchData()
-  }, [salesPage, purchasesPage, salesPerPage, purchasesPerPage, debouncedSearchTerm])
+  }, [salesPage, purchasesPage, salesPerPage, purchasesPerPage, debouncedSearchTerm, viewMode, selectedDate, selectedMonth])
 
 
   const fetchData = async () => {
     try {
       setLoading(true)
+      
+      // Prepare date filters based on view mode
+      const dateFilter = viewMode === 'daily' 
+        ? { date: selectedDate }
+        : { month: selectedMonth }
+      
       const [salesResponse, purchasesResponse, productsResponse, suppliersResponse, customersResponse] = await Promise.all([
         salesAPI.getAll({ 
           page: salesPage, 
           per_page: salesPerPage,
-          search: debouncedSearchTerm 
+          search: debouncedSearchTerm,
+          ...dateFilter
         }),
         purchasesAPI.getAll({ 
           page: purchasesPage, 
           per_page: purchasesPerPage,
-          search: debouncedSearchTerm 
+          search: debouncedSearchTerm,
+          ...dateFilter
         }),
         productsAPI.getAll(),
         suppliersAPI.getAll(),
@@ -1022,6 +1033,12 @@ export function SalesAndPurchases() {
   // Use purchases data directly since backend handles search and pagination  
   const filteredPurchases = purchases || []
 
+  // Calculate totals for current view
+  const salesTotal = filteredSales.reduce((sum, sale) => sum + (sale.final_amount || 0), 0)
+  const purchasesTotal = filteredPurchases.reduce((sum, purchase) => sum + (purchase.final_cost || 0), 0)
+  const salesCount = filteredSales.length
+  const purchasesCount = filteredPurchases.length
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -1034,6 +1051,41 @@ export function SalesAndPurchases() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900 dark:text-white">{t("sales.title")}</h1>
+        <div className="flex items-center space-x-4">
+          <div className="flex items-center space-x-2">
+            <span className="text-sm text-gray-600">Vue:</span>
+            <Select value={viewMode} onValueChange={(value: 'daily' | 'monthly') => setViewMode(value)}>
+              <SelectTrigger className="w-32">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="daily">Quotidien</SelectItem>
+                <SelectItem value="monthly">Mensuel</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          {viewMode === 'daily' ? (
+            <div className="flex items-center space-x-2">
+              <span className="text-sm text-gray-600">Date:</span>
+              <Input
+                type="date"
+                value={selectedDate}
+                onChange={(e) => setSelectedDate(e.target.value)}
+                className="w-40"
+              />
+            </div>
+          ) : (
+            <div className="flex items-center space-x-2">
+              <span className="text-sm text-gray-600">Mois:</span>
+              <Input
+                type="month"
+                value={selectedMonth}
+                onChange={(e) => setSelectedMonth(e.target.value)}
+                className="w-40"
+              />
+            </div>
+          )}
+        </div>
         <div className="flex space-x-2 rtl:space-x-reverse">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -1063,6 +1115,73 @@ export function SalesAndPurchases() {
             </>
           )}
         </div>
+      </div>
+
+      {/* Summary Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">
+              {viewMode === 'daily' ? 'Ventes du jour' : 'Ventes du mois'}
+            </CardTitle>
+            <ShoppingCart className="h-4 w-4 text-green-600" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{salesCount}</div>
+            <p className="text-xs text-muted-foreground">
+              Total: {formatCurrency(salesTotal)}
+            </p>
+          </CardContent>
+        </Card>
+        
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">
+              {viewMode === 'daily' ? 'Achats du jour' : 'Achats du mois'}
+            </CardTitle>
+            <Truck className="h-4 w-4 text-red-600" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{purchasesCount}</div>
+            <p className="text-xs text-muted-foreground">
+              Total: {formatCurrency(purchasesTotal)}
+            </p>
+          </CardContent>
+        </Card>
+        
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">
+              {viewMode === 'daily' ? 'Profit du jour' : 'Profit du mois'}
+            </CardTitle>
+            <TrendingUp className="h-4 w-4 text-blue-600" />
+          </CardHeader>
+          <CardContent>
+            <div className={`text-2xl font-bold ${salesTotal - purchasesTotal >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+              {formatCurrency(salesTotal - purchasesTotal)}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Revenus - Dépenses
+            </p>
+          </CardContent>
+        </Card>
+        
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">
+              {viewMode === 'daily' ? 'Marge du jour' : 'Marge du mois'}
+            </CardTitle>
+            <BarChart3 className="h-4 w-4 text-purple-600" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              {salesTotal > 0 ? `${(((salesTotal - purchasesTotal) / salesTotal) * 100).toFixed(1)}%` : '0%'}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Marge bénéficiaire
+            </p>
+          </CardContent>
+        </Card>
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>

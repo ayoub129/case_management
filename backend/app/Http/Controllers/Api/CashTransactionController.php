@@ -45,6 +45,19 @@ class CashTransactionController extends Controller
                 $query->where('transaction_date', '<=', $request->end_date);
             }
 
+            // Apply daily/monthly filters
+            if ($request->filled('date')) {
+                // Daily filter - show transactions for specific date
+                $query->whereDate('transaction_date', $request->date);
+            }
+
+            if ($request->filled('month')) {
+                // Monthly filter - show transactions for specific month
+                $monthStart = Carbon::parse($request->month . '-01')->startOfMonth();
+                $monthEnd = Carbon::parse($request->month . '-01')->endOfMonth();
+                $query->whereBetween('transaction_date', [$monthStart, $monthEnd]);
+            }
+
             // Apply sorting
             $sortBy = $request->get('sort_by', 'transaction_date');
             $sortOrder = $request->get('sort_order', 'desc');
@@ -192,79 +205,116 @@ class CashTransactionController extends Controller
     }
 
     /**
-     * Get cash balance summary with month-over-month comparisons
+     * Get cash balance summary with daily/monthly filtering
      */
-    public function balance(): JsonResponse
+    public function balance(Request $request): JsonResponse
     {
         try {
-            // Current month data
-            $currentMonth = Carbon::now()->startOfMonth();
-            $currentMonthEnd = Carbon::now()->endOfMonth();
-            
-            $currentMonthIncome = CashTransaction::where('type', 'income')
-                ->whereBetween('transaction_date', [$currentMonth, $currentMonthEnd])
-                ->sum('amount');
-                
-            $currentMonthExpenses = CashTransaction::where('type', 'expense')
-                ->whereBetween('transaction_date', [$currentMonth, $currentMonthEnd])
-                ->sum('amount');
-                
-            $currentMonthBalance = $currentMonthIncome - $currentMonthExpenses;
+            $viewMode = $request->get('view_mode', 'monthly'); // 'daily' or 'monthly'
+            $selectedDate = $request->get('date');
+            $selectedMonth = $request->get('month');
 
-            // Last month data
-            $lastMonth = Carbon::now()->subMonth()->startOfMonth();
-            $lastMonthEnd = Carbon::now()->subMonth()->endOfMonth();
-            
-            $lastMonthIncome = CashTransaction::where('type', 'income')
-                ->whereBetween('transaction_date', [$lastMonth, $lastMonthEnd])
-                ->sum('amount');
+            if ($viewMode === 'daily') {
+                // Daily view - compare with yesterday
+                $targetDate = $selectedDate ? Carbon::parse($selectedDate) : Carbon::today();
+                $previousDate = $targetDate->copy()->subDay();
                 
-            $lastMonthExpenses = CashTransaction::where('type', 'expense')
-                ->whereBetween('transaction_date', [$lastMonth, $lastMonthEnd])
-                ->sum('amount');
-                
-            $lastMonthBalance = $lastMonthIncome - $lastMonthExpenses;
+                // Today's data
+                $todayIncome = CashTransaction::where('type', 'income')
+                    ->whereDate('transaction_date', $targetDate)
+                    ->sum('amount');
+                    
+                $todayExpenses = CashTransaction::where('type', 'expense')
+                    ->whereDate('transaction_date', $targetDate)
+                    ->sum('amount');
+                    
+                $todayBalance = $todayIncome - $todayExpenses;
 
-            // All time totals
-            $totalIncome = CashTransaction::where('type', 'income')->sum('amount');
-            $totalExpenses = CashTransaction::where('type', 'expense')->sum('amount');
-            $currentBalance = $totalIncome - $totalExpenses;
+                // Yesterday's data
+                $yesterdayIncome = CashTransaction::where('type', 'income')
+                    ->whereDate('transaction_date', $previousDate)
+                    ->sum('amount');
+                    
+                $yesterdayExpenses = CashTransaction::where('type', 'expense')
+                    ->whereDate('transaction_date', $previousDate)
+                    ->sum('amount');
+                    
+                $yesterdayBalance = $yesterdayIncome - $yesterdayExpenses;
 
-            // Calculate percentage changes
-            $incomeChange = $lastMonthIncome > 0 ? (($currentMonthIncome - $lastMonthIncome) / $lastMonthIncome) * 100 : 0;
-            $expensesChange = $lastMonthExpenses > 0 ? (($currentMonthExpenses - $lastMonthExpenses) / $lastMonthExpenses) * 100 : 0;
-            $balanceChange = $lastMonthBalance != 0 ? (($currentMonthBalance - $lastMonthBalance) / abs($lastMonthBalance)) * 100 : 0;
+                // Calculate percentage changes
+                $incomeChange = $yesterdayIncome > 0 ? (($todayIncome - $yesterdayIncome) / $yesterdayIncome) * 100 : 0;
+                $expensesChange = $yesterdayExpenses > 0 ? (($todayExpenses - $yesterdayExpenses) / $yesterdayExpenses) * 100 : 0;
+                $balanceChange = $yesterdayBalance != 0 ? (($todayBalance - $yesterdayBalance) / abs($yesterdayBalance)) * 100 : 0;
 
-            return response()->json([
-                'success' => true,
-                'data' => [
-                    // Frontend expects these fields directly in data
-                    'total_income' => $totalIncome,
-                    'total_expenses' => $totalExpenses,
-                    'current_balance' => $currentBalance,
-                    'changes' => [
-                        'income_percentage' => round($incomeChange, 1),
-                        'expenses_percentage' => round($expensesChange, 1),
-                        'balance_percentage' => round($balanceChange, 1),
-                    ],
-                    // Keep detailed data for potential future use
-                    'current_month' => [
-                        'income' => $currentMonthIncome,
-                        'expenses' => $currentMonthExpenses,
-                        'balance' => $currentMonthBalance,
-                    ],
-                    'last_month' => [
-                        'income' => $lastMonthIncome,
-                        'expenses' => $lastMonthExpenses,
-                        'balance' => $lastMonthBalance,
-                    ],
-                    'total' => [
-                        'income' => $totalIncome,
-                        'expenses' => $totalExpenses,
-                        'balance' => $currentBalance,
+                return response()->json([
+                    'success' => true,
+                    'data' => [
+                        'total_income' => $todayIncome,
+                        'total_expenses' => $todayExpenses,
+                        'current_balance' => $todayBalance,
+                        'changes' => [
+                            'income_percentage' => round($incomeChange, 1),
+                            'expenses_percentage' => round($expensesChange, 1),
+                            'balance_percentage' => round($balanceChange, 1),
+                        ],
+                        'view_mode' => 'daily',
+                        'selected_date' => $targetDate->format('Y-m-d'),
+                        'comparison_date' => $previousDate->format('Y-m-d'),
                     ]
-                ]
-            ]);
+                ]);
+
+            } else {
+                // Monthly view - compare with last month
+                $targetMonth = $selectedMonth ? Carbon::parse($selectedMonth . '-01') : Carbon::now();
+                $targetMonthStart = $targetMonth->startOfMonth();
+                $targetMonthEnd = $targetMonth->endOfMonth();
+                $previousMonthStart = $targetMonth->copy()->subMonth()->startOfMonth();
+                $previousMonthEnd = $targetMonth->copy()->subMonth()->endOfMonth();
+                
+                // Current month data
+                $currentMonthIncome = CashTransaction::where('type', 'income')
+                    ->whereBetween('transaction_date', [$targetMonthStart, $targetMonthEnd])
+                    ->sum('amount');
+                    
+                $currentMonthExpenses = CashTransaction::where('type', 'expense')
+                    ->whereBetween('transaction_date', [$targetMonthStart, $targetMonthEnd])
+                    ->sum('amount');
+                    
+                $currentMonthBalance = $currentMonthIncome - $currentMonthExpenses;
+
+                // Last month data
+                $lastMonthIncome = CashTransaction::where('type', 'income')
+                    ->whereBetween('transaction_date', [$previousMonthStart, $previousMonthEnd])
+                    ->sum('amount');
+                    
+                $lastMonthExpenses = CashTransaction::where('type', 'expense')
+                    ->whereBetween('transaction_date', [$previousMonthStart, $previousMonthEnd])
+                    ->sum('amount');
+                    
+                $lastMonthBalance = $lastMonthIncome - $lastMonthExpenses;
+
+                // Calculate percentage changes
+                $incomeChange = $lastMonthIncome > 0 ? (($currentMonthIncome - $lastMonthIncome) / $lastMonthIncome) * 100 : 0;
+                $expensesChange = $lastMonthExpenses > 0 ? (($currentMonthExpenses - $lastMonthExpenses) / $lastMonthExpenses) * 100 : 0;
+                $balanceChange = $lastMonthBalance != 0 ? (($currentMonthBalance - $lastMonthBalance) / abs($lastMonthBalance)) * 100 : 0;
+
+                return response()->json([
+                    'success' => true,
+                    'data' => [
+                        'total_income' => $currentMonthIncome,
+                        'total_expenses' => $currentMonthExpenses,
+                        'current_balance' => $currentMonthBalance,
+                        'changes' => [
+                            'income_percentage' => round($incomeChange, 1),
+                            'expenses_percentage' => round($expensesChange, 1),
+                            'balance_percentage' => round($balanceChange, 1),
+                        ],
+                        'view_mode' => 'monthly',
+                        'selected_month' => $targetMonth->format('Y-m'),
+                        'comparison_month' => $targetMonth->copy()->subMonth()->format('Y-m'),
+                    ]
+                ]);
+            }
 
         } catch (\Exception $e) {
             return response()->json([
