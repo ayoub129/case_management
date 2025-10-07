@@ -1,0 +1,30 @@
+[Unit]
+Description=Laravel Backend API Server
+After=network.target mysql.service
+Wants=mysql.service
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/var/www/case/backend
+ExecStart=/usr/bin/php artisan serve --host=0.0.0.0 --port=8000
+ExecReload=/bin/kill -USR1 $MAINPID
+Restart=always
+RestartSec=3
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=laravel-backend
+
+# Environment variables
+Environment=APP_ENV=production
+Environment=APP_DEBUG=false
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/var/www/case/backend/storage /var/www/case/backend/bootstrap/cache
+
+[Install]
+WantedBy=multi-user.target 

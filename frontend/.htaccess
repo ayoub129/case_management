@@ -1,0 +1,19 @@
+RewriteEngine On
+
+# Handle Next.js static files
+RewriteCond %{REQUEST_URI} ^/_next/
+RewriteRule ^_next/(.*)$ /_next/$1 [L]
+
+# Handle API requests - proxy to Laravel backend
+RewriteCond %{REQUEST_URI} ^/api/
+RewriteRule ^api/(.*)$ http://127.0.0.1:8000/api/$1 [P,L]
+
+# Handle Next.js routing - serve index.html for all other requests
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^(.*)$ /index.html [L]
+
+# Security headers
+Header always set X-Frame-Options DENY
+Header always set X-Content-Type-Options nosniff
+Header always set X-XSS-Protection "1; mode=block" 
