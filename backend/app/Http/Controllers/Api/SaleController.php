@@ -127,6 +127,39 @@ class SaleController extends Controller
             $totalSales = $totalQuery->sum('final_amount') ?? 0;
             $totalCount = $totalQuery->count() ?? 0;
             
+            // Calculate profit based on cost price vs selling price
+            $totalProfit = 0;
+            $totalCost = 0;
+            
+            // Get sales with product information for profit calculation
+            $salesForProfit = $totalQuery->with('product')->get();
+            foreach ($salesForProfit as $sale) {
+                if ($sale->product) {
+                    $costPrice = (float) ($sale->product->cost_price ?? 0);
+                    $sellingPrice = (float) $sale->unit_price;
+                    $quantity = (int) $sale->quantity;
+                    
+                    $saleCost = $costPrice * $quantity;
+                    $saleRevenue = $sellingPrice * $quantity;
+                    $saleProfit = $saleRevenue - $saleCost;
+                    
+                    $totalCost += $saleCost;
+                    $totalProfit += $saleProfit;
+                    
+                    // Debug each sale calculation
+                    \Log::info('Sale profit debug:', [
+                        'sale_id' => $sale->id,
+                        'product_name' => $sale->product->name,
+                        'cost_price' => $costPrice,
+                        'selling_price' => $sellingPrice,
+                        'quantity' => $quantity,
+                        'sale_cost' => $saleCost,
+                        'sale_revenue' => $saleRevenue,
+                        'sale_profit' => $saleProfit
+                    ]);
+                }
+            }
+            
             // Debug logging
             \Log::info('Sales totals calculation:', [
                 'filters' => [
@@ -137,6 +170,8 @@ class SaleController extends Controller
                 ],
                 'total_sales' => $totalSales,
                 'total_count' => $totalCount,
+                'total_profit' => $totalProfit,
+                'total_cost' => $totalCost,
                 'sql' => $totalQuery->toSql(),
                 'bindings' => $totalQuery->getBindings()
             ]);
@@ -144,13 +179,17 @@ class SaleController extends Controller
             // Ensure we have valid numbers
             $totalSales = is_numeric($totalSales) ? (float) $totalSales : 0;
             $totalCount = is_numeric($totalCount) ? (int) $totalCount : 0;
+            $totalProfit = is_numeric($totalProfit) ? (float) $totalProfit : 0;
+            $totalCost = is_numeric($totalCost) ? (float) $totalCost : 0;
 
         return response()->json([
             'success' => true,
             'data' => $sales,
             'totals' => [
                 'total_amount' => $totalSales,
-                'total_count' => $totalCount
+                'total_count' => $totalCount,
+                'total_profit' => $totalProfit,
+                'total_cost' => $totalCost
             ]
             ]);
 

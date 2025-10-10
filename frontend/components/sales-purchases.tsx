@@ -109,6 +109,8 @@ export function SalesAndPurchases() {
   const [actualPurchasesTotal, setActualPurchasesTotal] = useState(0)
   const [actualSalesCount, setActualSalesCount] = useState(0)
   const [actualPurchasesCount, setActualPurchasesCount] = useState(0)
+  const [actualProfit, setActualProfit] = useState(0)
+  const [actualCost, setActualCost] = useState(0)
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState("")
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState("")
@@ -355,7 +357,7 @@ export function SalesAndPurchases() {
       }
       
       // Use totals from backend API response
-      const salesTotals = salesResponse.data.totals || { total_amount: 0, total_count: 0 }
+      const salesTotals = salesResponse.data.totals || { total_amount: 0, total_count: 0, total_profit: 0, total_cost: 0 }
       const purchasesTotals = purchasesResponse.data.totals || { total_amount: 0, total_count: 0 }
       
       console.log('Sales API Response:', salesResponse.data)
@@ -369,13 +371,17 @@ export function SalesAndPurchases() {
       const purchasesTotal = parseFloat(purchasesTotals.total_amount) || 0
       const salesCount = parseInt(salesTotals.total_count) || 0
       const purchasesCount = parseInt(purchasesTotals.total_count) || 0
+      const profit = parseFloat(salesTotals.total_profit) || 0
+      const cost = parseFloat(salesTotals.total_cost) || 0
       
-      console.log('Parsed totals:', { salesTotal, purchasesTotal, salesCount, purchasesCount })
+      console.log('Parsed totals:', { salesTotal, purchasesTotal, salesCount, purchasesCount, profit, cost })
       
       setActualSalesTotal(salesTotal)
       setActualPurchasesTotal(purchasesTotal)
       setActualSalesCount(salesCount)
       setActualPurchasesCount(purchasesCount)
+      setActualProfit(profit)
+      setActualCost(cost)
     } catch (error: any) {
       console.error('Error fetching data:', error)
       toast.error('Erreur lors du chargement des données')
@@ -1195,15 +1201,14 @@ export function SalesAndPurchases() {
             <TrendingUp className="h-4 w-4 text-blue-600" />
           </CardHeader>
           <CardContent>
-            <div className={`text-2xl font-bold ${(actualSalesTotal - actualPurchasesTotal) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+            <div className={`text-2xl font-bold ${actualProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
               {(() => {
-                const profit = actualSalesTotal - actualPurchasesTotal
-                console.log('Profit calculation:', { actualSalesTotal, actualPurchasesTotal, profit })
-                return formatCurrency(profit)
+                console.log('Profit calculation:', { actualProfit, actualCost, actualSalesTotal })
+                return formatCurrency(actualProfit)
               })()}
             </div>
             <p className="text-xs text-muted-foreground">
-              Revenus - Dépenses
+              Prix de vente - Coût des produits
             </p>
           </CardContent>
         </Card>
